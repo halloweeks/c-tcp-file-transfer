@@ -11,16 +11,6 @@
 #define PORT 8888
 #define BUFFER_SIZE 1024
 
-// Get File Size 
-off_t filesize(const char *filename) {
-    struct stat st; 
-
-    if (stat(filename, &st) == 0)
-        return st.st_size;
-
-    return -1; 
-}
-
 int main(int argc, char const *argv[]) {
 	if (argc != 2) {
 		printf("Usage %s filename.txt\n", argv[0]);
@@ -28,8 +18,7 @@ int main(int argc, char const *argv[]) {
 	}
 	
 	char chunk[BUFFER_SIZE] = {0};
-	// File meta Information
-	char FileMetaData[1024] = {0};
+	char filename[1024] = {0};
 	
 	int socket_fd = 0;
 	ssize_t len = 0;
@@ -66,11 +55,10 @@ int main(int argc, char const *argv[]) {
 		exit(1);
 	}
 	
-	strcpy(FileMetaData, "filename=");
-	strcat(FileMetaData, argv[1]);
-	strcat(FileMetaData, "\n");
+	strcpy(filename, argv[1]);
+	strcat(filename, "\n");
 	
-	if (send(socket_fd, FileMetaData, strlen(FileMetaData), 0) > 0) {
+	if (send(socket_fd, filename, strlen(filename), 0) > 0) {
 		printf("[INFO] Starting to transfer file %s\n", argv[1]);
 	} else {
 		printf("Failed to transfer file %s\n", argv[1]);

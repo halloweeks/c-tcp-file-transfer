@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <errno.h>
+#include <signal.h>
 
 // server address
 #define ADDRESS "0.0.0.0"
@@ -17,14 +18,21 @@
 
 char *GetFilename(const char*);
 int GetLine(int, char*);
+void signal_callback_handler(int);
 
 int main(int argc, char *argv[]) {
 	char buffer[BUFFER_SIZE] = {0};
+	char filename[BUFFER_SIZE] = {0};
+    ssize_t byte = 0;
+	int fd;
 	int master_socket, conn_id, len;
 	struct sockaddr_in server, client;
 	
 	memset(&server, 0, sizeof(server));
 	memset(&client, 0, sizeof(client));
+	
+	/* Catch Signal Handler SIGPIPE */
+	signal(SIGPIPE, signal_callback_handler);
 	
 	// creating master socket
 	if ((master_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
@@ -56,65 +64,41 @@ int main(int argc, char *argv[]) {
 	} else {
 		printf("[INFO] WAITING FOR INCOMING CONNECTIONS\n");
 	}
-    
-    if ((conn_id = accept(master_socket, (struct sockaddr*)&client, (socklen_t*)&len)) == -1) {
-    	printf("[WARNING] CAN'T ACCEPT NEW CONNECTION\n");
-    	exit(1);
-    } else {
-    	printf("[INFO] NEW CONNECTION ACCEPTED\n");//", inet_ntoa(client.sin.addr), ntohs(client.sin.port));
-    }
-    
-    char MetaData[1024] = {0};
-    char filename[1024] = {0};
-    
-    GetLine(conn_id, MetaData);
-    strcpy(filename, GetFilename(MetaData));
-    
-    if (filename[0] == '\0') {
-    	printf("No file name header found\n");
-        exit(1);
-    }
-    
-    int fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 644);
-    
-	// byte size
-	ssize_t byte = 0;
 	
-	// read response continue
-	while ((byte = recv(conn_id, buffer, BUFFER_SIZE, 0)) > 0) {
-		if (write(fd, buffer, byte) != byte) {
-			printf("Failed to write\n");
-			exit(1);
-		}
-	}
-	
-	close(fd);
+	while (1) {
+		if ((conn_id = accept(master_socket, (struct sockaddr*)&client, (socklen_t*)&len)) == -1) {
+        	printf("[WARNING] CAN'T ACCEPT NEW CONNECTION\n");
+            exit(1);
+        } else {
+        	printf("[INFO] NEW CONNECTION ACCEPTED FROM %s:%hu\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
+        }
+        
+        memset(filename, 0, 1024);
+        GetLine(conn_id, filename);
+        
+        fd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 644);
+        
+        if (fd == -1) {
+        	printf("[WARNING] FAILED TO CREATE FILE %s\n", strerror(errno));
+           close(conn_id);
+        }
+       
+       // read response continue
+       while ((byte = recv(conn_id, buffer, BUFFER_SIZE, 0)) > 0) {
+       	if (write(fd, buffer, byte) != byte) {
+       	    printf("[WARNING] FAILED TO WRITE\n");
+           }
+       }
+       
+       close(fd);
+	   printf("[INFO] CONNECTION CLOSED %s:%hu\n", inet_ntoa(client.sin_addr), ntohs(client.sin_port));
 	
 	// terminate connection
 	close(conn_id);
 	
-    exit(0);
-}
-
-char *GetFilename(const char *str) {
-	static char filename[1024] = {0};
-	int FileIndex = 0;
+     }
 	
-	for (int index = 0; index < strlen(str); index++) {
-		if (filename[0] == '\0') {
-			if (str[index-8] == 'f'  && str[index-7] == 'i'  && str[index-6] == 'l'  && str[index-5] == 'e'  && str[index-4] == 'n' && str[index-3] == 'a' && str[index-2] == 'm'  && str[index-1] == 'e' && str[index] == '=') {
-				filename[0] = 's';
-			}
-		} else {
-			if ((str[index] == '\r' && str[index +1] == '\n') || (str[index] != '\r' && str[index] == '\n')) {
-				break;
-			} else {
-				filename[FileIndex++] = str[index];
-			}
-		}
-		
-	}
-	return filename;
+    exit(0);
 }
 
 int GetLine(int fd, char* buffer) {
@@ -130,4 +114,9 @@ int GetLine(int fd, char* buffer) {
 	
 	strcpy(buffer, Data);
 	return index;
+}
+
+/* Catch Signal Handler functio */
+void signal_callback_handler(int signum) {
+        printf("Caught signal SIGPIPE %d\n",signum);
 }
